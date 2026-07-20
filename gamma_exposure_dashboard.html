@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Gamma Exposure Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #131920;
+    --panel-2: #1a222c;
+    --border: #263241;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --green: #26a69a;
+    --red: #ef5350;
+    --accent: #4f8cff;
+    --warn: #f0b429;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin-top: 2px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status-pill.connected .status-dot { background: var(--green); }
+  .status-pill.error .status-dot { background: var(--red); }
+  .status-pill.loading .status-dot { background: var(--warn); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  main { padding: 20px 24px 60px; max-width: 1280px; margin: 0 auto; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  .panel h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    margin: 0 0 12px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .panel h2 .chevron { transition: transform .15s; font-size: 11px; }
+  .panel.collapsed .panel-body { display: none; }
+  .panel.collapsed .chevron { transform: rotate(-90deg); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  input, select {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13.5px;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .field-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  button {
+    padding: 9px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+  }
+  button.secondary { background: transparent; color: var(--text); }
+  button.danger { background: transparent; color: var(--red); border-color: var(--red); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .card .label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .card .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .card .value.pos { color: var(--green); }
+  .card .value.neg { color: var(--red); }
+
+  #gexChart { width: 100%; height: 520px; }
+  #historyChart { width: 100%; height: 320px; }
+
+  .explainer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .regime-card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .regime-card h3 { margin: 0 0 8px 0; font-size: 13.5px; }
+  .regime-card.positive h3 { color: var(--green); }
+  .regime-card.negative h3 { color: var(--red); }
+  .regime-card p { margin: 0; font-size: 12.5px; color: var(--text); line-height: 1.5; }
+  .explainer-note {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text);
+    margin: 0 0 12px 0;
+  }
+  .explainer-disclaimer {
+    font-size: 11.5px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  .banner {
+    display: none;
+    background: rgba(239, 83, 80, .1);
+    border: 1px solid var(--red);
+    color: #ffb4b2;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .banner.show { display: block; }
+  .banner code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; }
+
+  .regime-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .regime-badge.positive { color: var(--green); border-color: var(--green); background: rgba(38,166,154,.12); }
+  .regime-badge.negative { color: var(--red); border-color: var(--red); background: rgba(239,83,80,.12); }
+  .market-read-text {
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+  }
+  .market-read-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 8px 0 0 0;
+    line-height: 1.5;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  .table-wrap { max-height: 340px; overflow-y: auto; }
+  tr.itm { color: var(--muted); }
+
+  pre#debugOut {
+    max-height: 340px;
+    overflow: auto;
+    background: #0a0d11;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    border: 1px solid var(--border);
+  }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11.5px;
+    padding: 20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Live Gamma Exposure (GEX) Dashboard</h1>
+    <div class="sub">Estimated dealer gamma exposure from Alpaca options chain data — for informational purposes only, not investment advice.</div>
+  </div>
+  <div id="statusPill" class="status-pill">
+    <span class="status-dot"></span>
+    <span id="statusText">Not connected</span>
+  </div>
+</header>
+
+<main>
+
+  <div class="panel" id="marketReadPanel">
+    <h2 onclick="togglePanel('marketReadPanel')" id="marketReadHeader">Market Read</h2>
+    <div class="panel-body">
+      <div id="marketReadBadge" class="regime-badge">Not connected</div>
+      <p id="marketReadText" class="market-read-text">Connect below to get a plain-language read of current dealer gamma positioning, updated automatically each refresh.</p>
+      <p id="marketReadSub" class="market-read-sub"></p>
+    </div>
+  </div>
+
+  <div id="corsBanner" class="banner">
+    <strong>Couldn't reach Alpaca from the browser.</strong>
+    <span id="corsBannerMsg"></span>
+    This is usually caused by one of the following:
+    <br>&bull; The API key/secret is incorrect, or this is a <em>paper</em> key (options data requires a <em>live</em> Alpaca account, used read-only).
+    <br>&bull; Alpaca's data API is blocking cross-origin browser requests (CORS). If so, opening this file over <code>http://localhost</code> (e.g. running <code>python3 -m http.server</code> in this file's folder, then visiting <code>http://localhost:8000/gamma_exposure_dashboard.html</code>) sometimes resolves it — otherwise this dashboard would need to be paired with a small local proxy/scheduled refresh instead of direct browser calls.
+    <br>&bull; You've hit a rate limit — try a longer refresh interval.
+    <br>Open the browser console (F12) for the exact error, and check the "Raw last response" panel below.
+  </div>
+
+  <div class="panel" id="explainerPanel">
+    <h2 onclick="togglePanel('explainerPanel')">How to Read This Dashboard <span class="chevron">&#9660;</span></h2>
+    <div class="panel-body">
+      <p class="explainer-note">
+        Market makers who sell options hedge their own exposure by trading the underlying. The direction of that
+        hedging flow depends on whether dealers are net long or net short gamma overall — that's what
+        <strong>Net GEX</strong> approximates.
+      </p>
+      <div class="explainer-grid">
+        <div class="regime-card positive">
+          <h3>Positive Net GEX (dealers long gamma)</h3>
+          <p>
+            Dealer hedging tends to be counter-trend: they sell into rallies and buy dips. This dampens realized
+            volatility and can make price feel "pinned" or mean-reverting near large open-interest strikes.
+          </p>
+        </div>
+        <div class="regime-card negative">
+          <h3>Negative Net GEX (dealers short gamma)</h3>
+          <p>
+            Dealer hedging tends to be trend-following: they buy as price rises and sell as it falls. This can
+            amplify moves and produce sharper, more volatile swings — often seen during selloffs.
+          </p>
+        </div>
+      </div>
+      <p class="explainer-note">
+        The <strong>Zero-Gamma Flip</strong> card is the strike where cumulative gamma crosses from positive to
+        negative. Price above that level is generally the calmer, positive-gamma regime; price below it is the
+        choppier, negative-gamma regime — some traders watch for the underlying crossing this level as a cue that
+        the character of price action may be changing.
+      </p>
+      <p class="explainer-note">
+        The chart and table below show where gamma concentrates by strike. Strikes with unusually large call or put
+        GEX act like "walls": heavy call gamma above spot can act as resistance/a magnet into expiration (pinning),
+        and heavy put gamma below spot can act as support — through the same dealer-hedging mechanics. These effects
+        are strongest close to expiration, especially for SPY's 0DTE contracts.
+      </p>
+      <div class="explainer-disclaimer">
+        The sign convention here (calls positive, puts negative) is a standard public-domain assumption about dealer
+        positioning, not verified fact — actual market-maker books aren't public, so treat direction as an estimate,
+        not certainty. This is a single snapshot metric, not predictive on its own, and works best combined with other
+        context (implied/realized vol, technical levels, event calendars). This dashboard is for informational
+        purposes only and is not financial advice; options trading carries substantial risk, including rapid and
+        total loss of premium.
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="settingsPanel">
+    <h2 onclick="togglePanel('settingsPanel')">Connection &amp; Settings <span class="chevron">&#9660;</span></h2>
+    <div class="panel-body">
+      <div class="grid">
+        <div>
+          <label for="apiKey">Alpaca API Key ID</label>
+          <input id="apiKey" type="text" autocomplete="off" placeholder="PK..." />
+        </div>
+        <div>
+          <label for="apiSecret">Alpaca Secret Key</label>
+          <input id="apiSecret" type="password" autocomplete="off" placeholder="Secret key" />
+        </div>
+        <div>
+          <label for="ticker">Underlying ticker</label>
+          <input id="ticker" type="text" value="SPY" />
+        </div>
+        <div>
+          <label for="feed">Options data feed</label>
+          <select id="feed">
+            <option value="indicative">indicative (default, included)</option>
+            <option value="opra">opra (requires paid subscription)</option>
+          </select>
+        </div>
+        <div>
+          <label for="expiryFilter">Expirations to include</label>
+          <select id="expiryFilter">
+            <option value="today" selected>Today only (0DTE)</option>
+            <option value="nearest">Nearest expiration only</option>
+            <option value="7">Next 7 days</option>
+            <option value="30">Next 30 days</option>
+            <option value="all">All available</option>
+          </select>
+          <div class="field-hint">"Today only" falls back to the nearest available expiration if SPY has none listed for today (e.g. weekends/holidays).</div>
+        </div>
+        <div>
+          <label for="refreshInterval">Auto-refresh every</label>
+          <select id="refreshInterval">
+            <option value="0">Manual only</option>
+            <option value="15000">15 seconds</option>
+            <option value="30000" selected>30 seconds</option>
+            <option value="60000">1 minute</option>
+            <option value="300000">5 minutes</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-hint">Credentials stay in this browser tab's memory only (never saved to disk or the file itself). Requires a <strong>live</strong> Alpaca account with options data access — paper keys cannot access options data.</div>
+      <div class="btn-row">
+        <button id="connectBtn" onclick="startConnection()">Connect &amp; Start</button>
+        <button id="refreshBtn" class="secondary" onclick="refreshData()" disabled>Refresh Now</button>
+        <button id="disconnectBtn" class="danger" onclick="stopConnection()" disabled>Disconnect</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="summaryPanel">
+    <h2 onclick="togglePanel('summaryPanel')" id="summaryHeader">Summary</h2>
+    <div class="panel-body">
+      <div class="cards" id="summaryCards">
+        <div class="card"><div class="label">Spot Price</div><div class="value" id="cardSpot">&mdash;</div></div>
+        <div class="card"><div class="label">Net GEX</div><div class="value" id="cardNet">&mdash;</div></div>
+        <div class="card"><div class="label">Call GEX</div><div class="value pos" id="cardCall">&mdash;</div></div>
+        <div class="card"><div class="label">Put GEX</div><div class="value neg" id="cardPut">&mdash;</div></div>
+        <div class="card"><div class="label">Zero-Gamma Flip</div><div class="value" id="cardFlip">&mdash;</div></div>
+        <div class="card"><div class="label">Distance to Nearest Wall</div><div class="value" id="cardWallDist">&mdash;</div></div>
+        <div class="card"><div class="label">Time to 0DTE Expiry</div><div class="value" id="cardTimeToClose" style="font-size:16px;">&mdash;</div></div>
+        <div class="card"><div class="label">Contracts Loaded</div><div class="value" id="cardCount">&mdash;</div></div>
+        <div class="card"><div class="label">Last Updated</div><div class="value" id="cardUpdated" style="font-size:14px;">&mdash;</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="chartPanelWrap">
+    <h2 id="chartPanel" onclick="togglePanel('chartPanelWrap')">Gamma Exposure by Strike</h2>
+    <div class="panel-body">
+      <div id="gexChart"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="historyPanelWrap">
+    <h2 onclick="togglePanel('historyPanelWrap')">Session History <span class="chevron">&#9660;</span></h2>
+    <div class="panel-body">
+      <div class="field-hint" style="margin-bottom:10px;">
+        Tracks Net GEX, spot price, and the zero-gamma flip level each time data refreshes. Kept in this browser
+        tab's memory only — it resets if you reload the page or close the tab (not saved to disk). Background
+        shading is a quick visual cue: red = negative gamma regime at that point in time, green = positive.
+      </div>
+      <div id="historyChart"></div>
+      <div class="btn-row">
+        <button class="secondary" onclick="clearHistory()">Clear History</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel collapsed" id="tablePanel">
+    <h2 onclick="togglePanel('tablePanel')">Per-Strike Data Table <span class="chevron">&#9660;</span></h2>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Strike</th><th>Call OI</th><th>Call Γ</th><th>Put OI</th><th>Put Γ</th><th>Net GEX ($)</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel collapsed" id="debugPanel">
+    <h2 onclick="togglePanel('debugPanel')">Raw Last Response (debug) <span class="chevron">&#9660;</span></h2>
+    <div class="panel-body">
+      <pre id="debugOut">No data fetched yet.</pre>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Gamma exposure is estimated as (Call Γ × Call OI − Put Γ × Put OI) × 100 × Spot² × 0.01, a common public-domain convention
+  that assumes dealers are net long call gamma and net short put gamma. Actual dealer positioning is not public information,
+  so treat this as a directional estimate, not a precise measurement. Not financial advice.
+</footer>
+
+<script>
+let state = {
+  timer: null,
+  connected: false,
+  lastRaw: null,
+  history: [], // in-memory only: { t: Date, netGEX, spot, flip }
+};
+const MAX_HISTORY_POINTS = 1000;
+
+function togglePanel(id) {
+  const el = document.getElementById(id) || document.getElementById(id + '-body')?.parentElement;
+  if (el) el.classList.toggle('collapsed');
+}
+
+function setStatus(kind, msg) {
+  const pill = document.getElementById('statusPill');
+  const text = document.getElementById('statusText');
+  pill.className = 'status-pill' + (kind ? ' ' + kind : '');
+  const labels = { connected: 'Live', loading: 'Fetching…', error: 'Error', idle: 'Not connected' };
+  text.textContent = msg || labels[kind] || 'Not connected';
+}
+
+function showCorsBanner(message) {
+  const banner = document.getElementById('corsBanner');
+  document.getElementById('corsBannerMsg').textContent = message ? (' ' + message) : '';
+  banner.classList.add('show');
+}
+function hideCorsBanner() {
+  document.getElementById('corsBanner').classList.remove('show');
+}
+
+function buildHeaders() {
+  return {
+    'APCA-API-KEY-ID': document.getElementById('apiKey').value.trim(),
+    'APCA-API-SECRET-KEY': document.getElementById('apiSecret').value.trim(),
+    'Accept': 'application/json',
+  };
+}
+
+async function fetchJSON(url, headers) {
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status} on ${url}\n${body.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+async function fetchSpot(ticker, headers) {
+  const url = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(ticker)}/trades/latest`;
+  const data = await fetchJSON(url, headers);
+  if (data && data.trade && typeof data.trade.p === 'number') return data.trade.p;
+  // fallback to latest quote midpoint
+  const qUrl = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(ticker)}/quotes/latest`;
+  const qData = await fetchJSON(qUrl, headers);
+  if (qData && qData.quote) {
+    const { ap, bp } = qData.quote;
+    if (ap && bp) return (ap + bp) / 2;
+  }
+  throw new Error('Could not determine underlying spot price from Alpaca response.');
+}
+
+async function fetchAllSnapshots(ticker, feed, headers) {
+  let all = {};
+  let pageToken = null;
+  let pages = 0;
+  do {
+    let url = `https://data.alpaca.markets/v1beta1/options/snapshots/${encodeURIComponent(ticker)}?feed=${feed}&limit=1000`;
+    if (pageToken) url += `&page_token=${encodeURIComponent(pageToken)}`;
+    const data = await fetchJSON(url, headers);
+    Object.assign(all, data.snapshots || {});
+    pageToken = data.next_page_token || null;
+    pages++;
+  } while (pageToken && pages < 20);
+  return all;
+}
+
+// The snapshots endpoint above carries greeks (gamma) but NOT open interest for
+// every contract. Open interest lives on the separate trading-API contracts
+// endpoint, so we fetch contract metadata (strike/expiration/type/OI) from there
+// and merge it with gamma from the snapshots endpoint by option symbol.
+async function fetchAllContracts(ticker, headers, dateGte, dateLte) {
+  let all = [];
+  let pageToken = null;
+  let pages = 0;
+  do {
+    let url = `https://api.alpaca.markets/v2/options/contracts?underlying_symbols=${encodeURIComponent(ticker)}&status=active&expiration_date_gte=${dateGte}&expiration_date_lte=${dateLte}&limit=1000`;
+    if (pageToken) url += `&page_token=${encodeURIComponent(pageToken)}`;
+    const data = await fetchJSON(url, headers);
+    all = all.concat(data.option_contracts || []);
+    pageToken = data.next_page_token || null;
+    pages++;
+  } while (pageToken && pages < 30);
+  return all;
+}
+
+// Picks a fetch window (not the final display filter) so we don't pull years
+// of far-dated LEAPS contracts just to throw most of them away client-side.
+function computeDateWindow(filterValue) {
+  const today = new Date();
+  const gte = today.toISOString().slice(0, 10);
+  // 'today' still fetches a few days out, not just today, so there's a
+  // sensible fallback (nearest expiration) if SPY has no 0DTE listed
+  // (e.g. weekends/holidays).
+  const daysByFilter = { today: 5, nearest: 10, '7': 10, '30': 35, all: 60 };
+  const days = daysByFilter[filterValue] ?? 35;
+  const end = new Date(today);
+  end.setDate(end.getDate() + days);
+  const lte = end.toISOString().slice(0, 10);
+  return { gte, lte };
+}
+
+async function tagged(promise, label) {
+  try {
+    return await promise;
+  } catch (err) {
+    throw new Error(`[${label}] ${err.message}`);
+  }
+}
+
+// Parses an OCC-style option symbol, e.g. "SPY240119C00450000", from the right
+// so it's robust regardless of root symbol length.
+function parseOCC(symbol) {
+  if (!symbol || symbol.length < 15) return null;
+  const strikeStr = symbol.slice(-8);
+  const typeChar = symbol.slice(-9, -8);
+  const dateStr = symbol.slice(-15, -9);
+  const root = symbol.slice(0, -15);
+  const strike = parseInt(strikeStr, 10) / 1000;
+  const type = typeChar === 'C' ? 'call' : (typeChar === 'P' ? 'put' : null);
+  if (!type || isNaN(strike) || dateStr.length !== 6) return null;
+  const yy = parseInt(dateStr.slice(0, 2), 10);
+  const mm = dateStr.slice(2, 4);
+  const dd = dateStr.slice(4, 6);
+  const expiration = `20${dateStr.slice(0,2)}-${mm}-${dd}`;
+  return { root, expiration, type, strike };
+}
+
+function filterByExpiry(rows, filterValue) {
+  if (!rows.length) return rows;
+  if (filterValue === 'all') return rows;
+  const dates = [...new Set(rows.map(r => r.expiration))].sort();
+  if (filterValue === 'today') {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayRows = rows.filter(r => r.expiration === todayStr);
+    // Graceful fallback: if SPY has no expiration listed for today (weekend,
+    // holiday, or checked after today's contracts stopped trading), fall
+    // back to whatever the nearest available expiration is instead.
+    if (todayRows.length) return todayRows;
+    const nearest = dates[0];
+    return rows.filter(r => r.expiration === nearest);
+  }
+  if (filterValue === 'nearest') {
+    const nearest = dates[0];
+    return rows.filter(r => r.expiration === nearest);
+  }
+  const days = parseInt(filterValue, 10);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return rows.filter(r => r.expiration <= cutoffStr);
+}
+
+function aggregateByStrike(rows, spot) {
+  const byStrike = new Map();
+  for (const r of rows) {
+    if (!byStrike.has(r.strike)) {
+      byStrike.set(r.strike, { strike: r.strike, callOI: 0, putOI: 0, callGammaSum: 0, putGammaSum: 0 });
+    }
+    const entry = byStrike.get(r.strike);
+    if (r.type === 'call') {
+      entry.callOI += r.oi;
+      entry.callGammaSum += r.gamma * r.oi;
+    } else {
+      entry.putOI += r.oi;
+      entry.putGammaSum += r.gamma * r.oi;
+    }
+  }
+  const spotSq = spot * spot;
+  const rowsOut = [...byStrike.values()].map(e => {
+    const callGEX = e.callGammaSum * 100 * spotSq * 0.01;
+    const putGEX = e.putGammaSum * 100 * spotSq * 0.01;
+    return { ...e, callGEX, putGEX, netGEX: callGEX - putGEX };
+  }).sort((a, b) => a.strike - b.strike);
+  return rowsOut;
+}
+
+function findZeroGammaFlip(byStrike) {
+  let cum = 0;
+  const cumSeries = byStrike.map(row => { cum += row.netGEX; return { strike: row.strike, cum }; });
+  for (let i = 1; i < cumSeries.length; i++) {
+    const a = cumSeries[i - 1], b = cumSeries[i];
+    if ((a.cum <= 0 && b.cum > 0) || (a.cum >= 0 && b.cum < 0)) {
+      const frac = Math.abs(a.cum) / (Math.abs(a.cum) + Math.abs(b.cum));
+      return a.strike + frac * (b.strike - a.strike);
+    }
+  }
+  return null;
+}
+
+function fmtMoney(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
+}
+
+// Finds the strike with the single largest call GEX and put GEX magnitude —
+// the "walls" traders watch as potential resistance/support / pin points.
+function findWalls(byStrike) {
+  let callWall = null, putWall = null;
+  for (const r of byStrike) {
+    if (r.callGEX > 0 && (!callWall || r.callGEX > callWall.callGEX)) callWall = r;
+    if (r.putGEX > 0 && (!putWall || r.putGEX > putWall.putGEX)) putWall = r;
+  }
+  return { callWall, putWall };
+}
+
+// Picks a default zoomed-in x-axis range around the strikes that actually
+// carry meaningful gamma, so the chart isn't dominated by hundreds of
+// near-zero far-OTM bars. Users can still zoom out via the chart toolbar.
+function computeFocusRange(byStrike, spot) {
+  if (!byStrike.length) return null;
+  const maxAbs = Math.max(...byStrike.map(r => Math.max(r.callGEX, r.putGEX)), 0);
+  if (maxAbs <= 0) return null;
+  const threshold = maxAbs * 0.02;
+  const significant = byStrike.filter(r => r.callGEX >= threshold || r.putGEX >= threshold);
+  if (!significant.length) return null;
+  let lo = Math.min(...significant.map(r => r.strike));
+  let hi = Math.max(...significant.map(r => r.strike));
+  if (spot) { lo = Math.min(lo, spot); hi = Math.max(hi, spot); }
+  const pad = Math.max((hi - lo) * 0.15, 5);
+  return [lo - pad, hi + pad];
+}
+
+// Builds the plain-language "Market Read" takeaway shown at the top of the
+// dashboard, generated fresh from the live data on every refresh.
+// Of the call wall and put wall, returns whichever strike is physically
+// closest to spot right now — the level most likely to matter in the next
+// few minutes for a 0DTE trade.
+function nearestWall(byStrike, spot) {
+  const { callWall, putWall } = findWalls(byStrike);
+  const candidates = [];
+  if (callWall) candidates.push({ side: 'call', strike: callWall.strike });
+  if (putWall) candidates.push({ side: 'put', strike: putWall.strike });
+  if (!candidates.length || !spot) return null;
+  candidates.sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot));
+  const nearest = candidates[0];
+  const distance = nearest.strike - spot;
+  const pct = (distance / spot) * 100;
+  return { ...nearest, distance, pct };
+}
+
+// Minutes remaining until today's US equity options close (4:00 PM ET),
+// computed via the "round-trip through toLocaleString" trick so it's correct
+// regardless of the viewer's own timezone or daylight saving time.
+function minutesToClose() {
+  const now = new Date();
+  const nyNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const close = new Date(nyNow);
+  close.setHours(16, 0, 0, 0);
+  return Math.round((close - nyNow) / 60000);
+}
+
+function formatMinutesToClose(mins) {
+  if (mins === null || mins === undefined || isNaN(mins)) return '—';
+  if (mins <= 0) return 'Market closed';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m to close` : `${m}m to close`;
+}
+
+function renderMarketRead(byStrike, spot, netGEX, flip) {
+  const badge = document.getElementById('marketReadBadge');
+  const text = document.getElementById('marketReadText');
+  const sub = document.getElementById('marketReadSub');
+  const { callWall, putWall } = findWalls(byStrike);
+  const negative = netGEX < 0;
+
+  badge.textContent = negative ? 'NEGATIVE GAMMA' : 'POSITIVE GAMMA';
+  badge.className = 'regime-badge ' + (negative ? 'negative' : 'positive');
+
+  const spotStr = spot ? `$${spot.toFixed(2)}` : 'spot';
+  let flipClause;
+  if (flip) {
+    flipClause = spot >= flip
+      ? `above the zero-gamma flip ($${flip.toFixed(2)})`
+      : `below the zero-gamma flip ($${flip.toFixed(2)})`;
+  } else {
+    flipClause = 'inside a range with no zero-gamma flip crossing (net GEX stays one sign throughout)';
+  }
+  const hedgingClause = negative
+    ? 'dealer hedging here is likely pro-cyclical — buying as price rises and selling as it falls — which can amplify moves rather than dampen them'
+    : 'dealer hedging here is likely counter-cyclical — selling into rallies and buying dips — which tends to dampen moves and can pin price near large strikes';
+
+  let sentence = `${negative ? 'Negative' : 'Positive'} net GEX overall. ${spotStr} is ${flipClause}, so ${hedgingClause}.`;
+
+  const wall = nearestWall(byStrike, spot);
+  if (wall) {
+    const wallLabel = wall.side === 'call' ? 'call wall (resistance)' : 'put wall (support)';
+    const closeEnough = Math.abs(wall.pct) < 0.5;
+    sentence += closeEnough
+      ? ` Price is sitting right at the nearest ${wallLabel} at $${wall.strike.toFixed(2)} (${Math.abs(wall.pct).toFixed(2)}% away) — watch for a bounce/rejection here, or an accelerated move if it breaks.`
+      : ` Nearest wall is the ${wallLabel} at $${wall.strike.toFixed(2)}, ${Math.abs(wall.pct).toFixed(2)}% ${wall.distance >= 0 ? 'above' : 'below'} spot.`;
+  }
+
+  const mins = minutesToClose();
+  if (mins !== null && mins > 0 && mins < 240) {
+    sentence += ` Only ${formatMinutesToClose(mins)} today — charm/gamma effects on 0DTE contracts intensify fast from here.`;
+  }
+  text.textContent = sentence;
+
+  const parts = [];
+  if (putWall) parts.push(`Put wall (potential support): $${putWall.strike.toFixed(2)}`);
+  if (callWall) parts.push(`Call wall (potential resistance): $${callWall.strike.toFixed(2)}`);
+  parts.push(formatMinutesToClose(mins));
+  sub.textContent = parts.join('  •  ');
+}
+
+function renderSummary(byStrike, spot) {
+  const totalCall = byStrike.reduce((s, r) => s + r.callGEX, 0);
+  const totalPut = byStrike.reduce((s, r) => s + r.putGEX, 0);
+  const net = totalCall - totalPut;
+  const flip = findZeroGammaFlip(byStrike);
+  document.getElementById('cardSpot').textContent = spot ? `$${spot.toFixed(2)}` : '—';
+  const netEl = document.getElementById('cardNet');
+  netEl.textContent = fmtMoney(net);
+  netEl.className = 'value ' + (net >= 0 ? 'pos' : 'neg');
+  document.getElementById('cardCall').textContent = fmtMoney(totalCall);
+  document.getElementById('cardPut').textContent = fmtMoney(-totalPut);
+  document.getElementById('cardFlip').textContent = flip ? `$${flip.toFixed(2)}` : '—';
+
+  const wall = nearestWall(byStrike, spot);
+  const wallEl = document.getElementById('cardWallDist');
+  if (wall) {
+    wallEl.textContent = `${Math.abs(wall.pct).toFixed(2)}% (${wall.side} wall)`;
+    wallEl.className = 'value ' + (Math.abs(wall.pct) < 0.5 ? 'neg' : '');
+  } else {
+    wallEl.textContent = '—';
+    wallEl.className = 'value';
+  }
+  document.getElementById('cardTimeToClose').textContent = formatMinutesToClose(minutesToClose());
+
+  document.getElementById('cardCount').textContent = byStrike.length + ' strikes';
+  document.getElementById('cardUpdated').textContent = new Date().toLocaleTimeString();
+}
+
+function mergeLabelClusters(labelDefs, focusRange, strikes) {
+  if (!labelDefs.length) return [];
+  const sorted = [...labelDefs].sort((a, b) => a.x - b.x);
+
+  let span;
+  if (focusRange && focusRange.length === 2) {
+    span = focusRange[1] - focusRange[0];
+  } else if (strikes && strikes.length > 1) {
+    span = Math.max(...strikes) - Math.min(...strikes);
+  } else {
+    span = 1;
+  }
+  const mergeThreshold = span * 0.035;
+
+  const clusters = [];
+  let current = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = current[current.length - 1];
+    if (sorted[i].x - prev.x <= mergeThreshold) {
+      current.push(sorted[i]);
+    } else {
+      clusters.push(current);
+      current = [sorted[i]];
+    }
+  }
+  clusters.push(current);
+
+  return clusters.map(cluster => {
+    const x = cluster.reduce((s, l) => s + l.x, 0) / cluster.length;
+    if (cluster.length === 1) {
+      return {
+        x, y: 1, yref: 'paper', yanchor: 'bottom', text: cluster[0].text, showarrow: false,
+        font: { color: cluster[0].color, size: 11, family: 'inherit' },
+      };
+    }
+    return {
+      x, y: 1, yref: 'paper', yanchor: 'bottom', text: cluster.map(l => l.text).join('<br>'), showarrow: false,
+      font: { color: '#e6edf3', size: 11, family: 'inherit' },
+      align: 'center',
+    };
+  });
+}
+
+function renderChart(byStrike, spot) {
+  const strikes = byStrike.map(r => r.strike);
+  const callTrace = {
+    x: strikes, y: byStrike.map(r => r.callGEX),
+    type: 'bar', name: 'Call GEX', marker: { color: '#26a69a' },
+  };
+  const putTrace = {
+    x: strikes, y: byStrike.map(r => -r.putGEX),
+    type: 'bar', name: 'Put GEX', marker: { color: '#ef5350' },
+  };
+  let cum = 0;
+  const cumTrace = {
+    x: strikes,
+    y: byStrike.map(r => { cum += r.netGEX; return cum; }),
+    type: 'scatter', mode: 'lines', name: 'Cumulative Net GEX',
+    yaxis: 'y2', line: { color: '#f0b429', width: 2, dash: 'dot' },
+  };
+  const shapes = [];
+  const labelDefs = [];
+  const labelShape = (x, color, dash) => shapes.push({ type: 'line', x0: x, x1: x, y0: 0, y1: 1, yref: 'paper', line: { color, width: 1.5, dash } });
+  const labelText = (x, text, color) => labelDefs.push({ x, text, color });
+
+  if (spot) {
+    labelShape(spot, '#4f8cff', 'dash');
+    labelText(spot, 'Spot', '#4f8cff');
+  }
+  const { callWall, putWall } = findWalls(byStrike);
+  if (callWall) {
+    labelShape(callWall.strike, '#26a69a', 'dot');
+    labelText(callWall.strike, 'Call Wall', '#26a69a');
+  }
+  if (putWall) {
+    labelShape(putWall.strike, '#ef5350', 'dot');
+    labelText(putWall.strike, 'Put Wall', '#ef5350');
+  }
+  const flip = findZeroGammaFlip(byStrike);
+  if (flip) {
+    labelShape(flip, '#f0b429', 'dashdot');
+    labelText(flip, 'Flip', '#f0b429');
+  }
+
+  const focusRange = computeFocusRange(byStrike, spot);
+  const annotations = mergeLabelClusters(labelDefs, focusRange, strikes);
+
+  const layout = {
+    barmode: 'relative',
+    paper_bgcolor: '#131920', plot_bgcolor: '#131920',
+    font: { color: '#e6edf3', size: 12 },
+    margin: { t: 34, r: 60, l: 60, b: 40 },
+    xaxis: { title: 'Strike', gridcolor: '#263241', zeroline: false, range: focusRange || undefined },
+    yaxis: { title: 'Gamma Exposure ($ per 1% move)', gridcolor: '#263241', zeroline: true, zerolinecolor: '#8b98a5' },
+    yaxis2: { overlaying: 'y', side: 'right', showgrid: false, title: 'Cumulative Net GEX' },
+    legend: { orientation: 'h', y: 1.08 },
+    shapes,
+    annotations,
+  };
+  Plotly.react('gexChart', [callTrace, putTrace, cumTrace], layout, { responsive: true, displaylogo: false });
+}
+
+function renderHistoryChart() {
+  const h = state.history;
+  const netTrace = {
+    x: h.map(p => p.t), y: h.map(p => p.netGEX),
+    type: 'scatter', mode: 'lines', name: 'Net GEX',
+    line: { color: '#f0b429', width: 2 },
+  };
+  const spotTrace = {
+    x: h.map(p => p.t), y: h.map(p => p.spot),
+    type: 'scatter', mode: 'lines', name: 'Spot Price',
+    yaxis: 'y2', line: { color: '#4f8cff', width: 1.5 },
+  };
+  const flipTrace = {
+    x: h.map(p => p.t), y: h.map(p => p.flip),
+    type: 'scatter', mode: 'lines', name: 'Zero-Gamma Flip',
+    yaxis: 'y2', line: { color: '#8b98a5', width: 1.5, dash: 'dot' },
+  };
+  // Tint the background red/green depending on whether Net GEX was negative
+  // or positive at each point in time, so the regime is visible at a glance
+  // without having to read the numbers off the axis.
+  const shapes = [];
+  for (let i = 0; i < h.length - 1; i++) {
+    const negative = h[i].netGEX < 0;
+    shapes.push({
+      type: 'rect', xref: 'x', yref: 'paper',
+      x0: h[i].t, x1: h[i + 1].t, y0: 0, y1: 1,
+      fillcolor: negative ? 'rgba(239,83,80,0.09)' : 'rgba(38,166,154,0.09)',
+      line: { width: 0 }, layer: 'below',
+    });
+  }
+  const layout = {
+    paper_bgcolor: '#131920', plot_bgcolor: '#131920',
+    font: { color: '#e6edf3', size: 12 },
+    margin: { t: 20, r: 60, l: 60, b: 40 },
+    xaxis: { gridcolor: '#263241', title: 'Time' },
+    yaxis: { title: 'Net GEX ($)', gridcolor: '#263241', zeroline: true, zerolinecolor: '#8b98a5' },
+    yaxis2: { overlaying: 'y', side: 'right', showgrid: false, title: 'Price ($)' },
+    legend: { orientation: 'h', y: 1.12 },
+    shapes,
+  };
+  Plotly.react('historyChart', [netTrace, spotTrace, flipTrace], layout, { responsive: true, displaylogo: false });
+}
+
+function clearHistory() {
+  state.history = [];
+  renderHistoryChart();
+}
+
+function renderTable(byStrike) {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = byStrike.map(r => `
+    <tr>
+      <td>${r.strike.toFixed(2)}</td>
+      <td>${r.callOI.toLocaleString()}</td>
+      <td>${(r.callGammaSum / (r.callOI || 1)).toFixed(4)}</td>
+      <td>${r.putOI.toLocaleString()}</td>
+      <td>${(r.putGammaSum / (r.putOI || 1)).toFixed(4)}</td>
+      <td>${fmtMoney(r.netGEX)}</td>
+    </tr>
+  `).join('');
+}
+
+async function refreshData() {
+  hideCorsBanner();
+  setStatus('loading');
+  const ticker = document.getElementById('ticker').value.trim().toUpperCase() || 'SPY';
+  const feed = document.getElementById('feed').value;
+  const expiryFilter = document.getElementById('expiryFilter').value;
+  try {
+    const headers = buildHeaders();
+    if (!headers['APCA-API-KEY-ID'] || !headers['APCA-API-SECRET-KEY']) {
+      throw new Error('Enter your Alpaca API Key ID and Secret Key first.');
+    }
+    const { gte, lte } = computeDateWindow(expiryFilter);
+    const [spot, contracts, snapshots] = await Promise.all([
+      tagged(fetchSpot(ticker, headers), 'spot price'),
+      tagged(fetchAllContracts(ticker, headers, gte, lte), 'options contracts (api.alpaca.markets)'),
+      tagged(fetchAllSnapshots(ticker, feed, headers), 'options snapshots/greeks (data.alpaca.markets)'),
+    ]);
+
+    const rows = [];
+    const contractsFetched = contracts.length;
+    let withPositiveOI = 0, gammaMatched = 0, gammaZero = 0;
+    let firstContract = null, firstMatchedSnapshot = null;
+    for (const c of contracts) {
+      const sym = c.symbol;
+      const strike = parseFloat(c.strike_price);
+      const expiry = c.expiration_date;
+      const type = (c.type || '').toLowerCase(); // 'call' | 'put'
+      const oi = Number(c.open_interest ?? 0);
+      if (oi > 0) withPositiveOI++;
+      if (!firstContract) firstContract = c;
+
+      const snap = snapshots[sym];
+      const gamma = snap?.greeks?.gamma;
+      if (gamma === undefined || gamma === null) continue;
+      gammaMatched++;
+      if (gamma === 0) gammaZero++;
+      if (!firstMatchedSnapshot) firstMatchedSnapshot = { symbol: sym, data: snap };
+
+      if (!sym || !strike || !expiry || (type !== 'call' && type !== 'put')) continue;
+      rows.push({ symbol: sym, strike, expiration: expiry, type, gamma, oi });
+    }
+    if (!rows.length) {
+      throw new Error(`No option contracts with matched open-interest + gamma data were found for ${ticker}. Check the ticker symbol and that your account has options data access.`);
+    }
+    const filtered = filterByExpiry(rows, expiryFilter);
+    const byStrike = aggregateByStrike(filtered, spot);
+    renderChart(byStrike, spot);
+    renderSummary(byStrike, spot);
+    renderTable(byStrike);
+
+    const netGEX = byStrike.reduce((s, r) => s + r.netGEX, 0);
+    const flip = findZeroGammaFlip(byStrike);
+    renderMarketRead(byStrike, spot, netGEX, flip);
+    state.history.push({ t: new Date(), netGEX, spot, flip });
+    if (state.history.length > MAX_HISTORY_POINTS) state.history.shift();
+    renderHistoryChart();
+
+    // Diagnostics: open interest comes from /v2/options/contracts (trading API),
+    // gamma comes from /v1beta1/options/snapshots (market data API), merged by
+    // option symbol. If a count looks off, the samples below show the raw
+    // shape Alpaca actually returned from each endpoint.
+    state.lastRaw = {
+      fetchedAt: new Date().toISOString(),
+      ticker, spot,
+      contractsFetched,
+      contractsWithPositiveOpenInterest: withPositiveOI,
+      contractsWithMatchedGamma: gammaMatched,
+      contractsWithGammaExactlyZero: gammaZero,
+      usableRows: rows.length,
+      usedInChart: filtered.length,
+      netGEXAllStrikes: netGEX,
+      diagnosis: contractsFetched === 0
+        ? 'WARNING: zero contracts were returned from /v2/options/contracts — check ticker symbol, date window, and that this endpoint is reachable from the browser (see sampleContract below).'
+        : withPositiveOI === 0
+        ? 'WARNING: zero contracts have open_interest > 0 in the contracts endpoint response — check sampleContract below for the real field name/value.'
+        : gammaMatched === 0
+        ? 'WARNING: no contracts had a matching snapshot with a gamma value — check sampleMatchedSnapshot below (symbols may not align between the two endpoints).'
+        : (gammaZero === gammaMatched
+            ? 'WARNING: every matched contract has gamma exactly 0 — check sampleMatchedSnapshot below.'
+            : 'Looks normal.'),
+      sampleContract: firstContract,
+      sampleMatchedSnapshot: firstMatchedSnapshot,
+    };
+    document.getElementById('debugOut').textContent = JSON.stringify(state.lastRaw, null, 2);
+    if (state.lastRaw.diagnosis.startsWith('WARNING')) {
+      document.getElementById('debugPanel').classList.remove('collapsed');
+    }
+    setStatus('connected');
+  } catch (err) {
+    console.error(err);
+    setStatus('error', 'Error — see details below');
+    showCorsBanner(err.message);
+    document.getElementById('debugOut').textContent = 'Last error:\n' + (err.stack || err.message);
+  }
+}
+
+function startConnection() {
+  state.connected = true;
+  document.getElementById('connectBtn').disabled = true;
+  document.getElementById('refreshBtn').disabled = false;
+  document.getElementById('disconnectBtn').disabled = false;
+  refreshData();
+  const intervalMs = parseInt(document.getElementById('refreshInterval').value, 10);
+  if (state.timer) clearInterval(state.timer);
+  if (intervalMs > 0) {
+    state.timer = setInterval(refreshData, intervalMs);
+  }
+}
+
+function stopConnection() {
+  state.connected = false;
+  if (state.timer) clearInterval(state.timer);
+  state.timer = null;
+  document.getElementById('connectBtn').disabled = false;
+  document.getElementById('refreshBtn').disabled = true;
+  document.getElementById('disconnectBtn').disabled = true;
+  setStatus('idle');
+  const badge = document.getElementById('marketReadBadge');
+  badge.textContent = 'Not connected';
+  badge.className = 'regime-badge';
+  document.getElementById('marketReadText').textContent = 'Connect below to get a plain-language read of current dealer gamma positioning, updated automatically each refresh.';
+  document.getElementById('marketReadSub').textContent = '';
+}
+
+// Restart the interval if the user changes the refresh interval while connected
+document.getElementById('refreshInterval').addEventListener('change', () => {
+  if (state.connected) {
+    const intervalMs = parseInt(document.getElementById('refreshInterval').value, 10);
+    if (state.timer) clearInterval(state.timer);
+    state.timer = intervalMs > 0 ? setInterval(refreshData, intervalMs) : null;
+  }
+});
+
+setStatus('idle');
+</script>
+
+</body>
+</html>
